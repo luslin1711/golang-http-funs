@@ -5,6 +5,7 @@ import (
 	"github.com/tidwall/gjson"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 )
 
 type ArgType int
@@ -44,8 +45,11 @@ func NewRequestParser() *RequestParser {
 
 
 func (r *RequestParser) Parse(res *http.Request) (args map[string]interface{}, err error) {
+	var bodyBytes []byte
 	args = make(map[string]interface{})
-	bodyBytes, err := ioutil.ReadAll(res.Body)
+	if res.Body != nil{
+		bodyBytes, err = ioutil.ReadAll(res.Body)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -59,31 +63,92 @@ func (r *RequestParser) Parse(res *http.Request) (args map[string]interface{}, e
 			if value == "" && v.required == true {
 				return args, errors.New(v.help)
 			}
-			args[v.name] = value
+			switch v.argType {
+			case Int:
+				num,err := strconv.Atoi(value)
+				args[v.name] = num
+				if err != nil{
+					args[v.name] = nil
+				}
+			case Bool:
+				parseboolstr, err := strconv.ParseBool(value)
+				args[v.name] = parseboolstr
+				if err != nil{
+					args[v.name] = nil
+				}
+			case Str:
+				if value == ""{
+					args[v.name] = nil
+				}else {
+					args[v.name] = value
+				}
+			}
 		} else if v.location == Post {
 			value := gjson.GetBytes(bodyBytes, v.name)
-			args[v.name] = value.String()
+			switch v.argType {
+			case Bool:
+				args[v.name] = value.Bool()
+			case Str:
+				args[v.name] = value.String()
+			case Json:
+				args[v.name] = value.String()
+			case Array:
+				args[v.name] = value.String()
+			case Int:
+				args[v.name] = value.Int()
+			}
 			if value.String() == "" && v.required == true {
 				return args, errors.New(v.help)
 			}
-			if v.argType == Json && !value.IsObject() {
-				return args, errors.New(v.name + " type error,real type is " + value.Type.String())
+			if v.required == true{
+				if v.argType == Json && !value.IsObject() {
+					return args, errors.New(v.name + " type error,real type is " + value.Type.String())
+				}
+				if v.argType == Array && !value.IsArray() {
+					return args, errors.New(v.name + " type error,real type is " + value.Type.String())
+				}
+				if v.argType == Bool && !(value.Type == gjson.True || value.Type == gjson.False)  {
+					return args, errors.New(v.name + " type error,real type is " + value.Type.String())
+				}
+				if v.argType == Int && !(value.Type == gjson.Number)  {
+					return args, errors.New(v.name + " type error,real type is " + value.Type.String())
+				}
+			} else {
+				if v.argType == Json && !(value.IsObject() || (value.Type == gjson.Null)) {
+					return args, errors.New(v.name + " type error,real type is " + value.Type.String())
+				}
+				if v.argType == Array && !(value.IsArray() || (value.Type == gjson.Null)){
+					return args, errors.New(v.name + " type error,real type is " + value.Type.String())
+				}
+				if v.argType == Bool && !((value.Type == gjson.True || value.Type == gjson.False) || (value.Type == gjson.Null)) {
+					return args, errors.New(v.name + " type error,real type is " + value.Type.String())
+				}
+				if v.argType == Int && !((value.Type == gjson.Number) || (value.Type == gjson.Null)){
+					return args, errors.New(v.name + " type error,real type is " + value.Type.String())
+				}
 			}
-			if v.argType == Array && !value.IsArray() {
-				return args, errors.New(v.name + " type error,real type is " + value.Type.String())
-			}
-			if v.argType == Bool && !(value.Type == gjson.True || value.Type == gjson.False) {
-				return args, errors.New(v.name + " type error,real type is " + value.Type.String())
-			}
-			if v.argType == Int && !(value.Type == gjson.Number) {
-				return args, errors.New(v.name + " type error,real type is " + value.Type.String())
-			}
+
 		} else if v.location == Header {
 			value := res.Header.Get(v.name)
 			if value == "" && v.required == true {
 				return args, errors.New(v.help)
 			}
-			args[v.name] = value
+			switch v.argType {
+			case Int:
+				num,err := strconv.Atoi(value)
+				args[v.name] = num
+				if err != nil{
+					args[v.name] = nil
+				}
+			case Bool:
+				parseboolstr, err := strconv.ParseBool(value)
+				args[v.name] = parseboolstr
+				if err != nil{
+					args[v.name] = nil
+				}
+			case Str:
+				args[v.name] = value
+			}
 		}
 	}
 	return args, nil
